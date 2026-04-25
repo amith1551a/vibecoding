@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper: Is the user an Admin?
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
+    }
+
+    // Helper: Is the user a Supervisor?
+    function isSupervisor() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Supervisor';
+    }
+
+    // --- 1. IMMUTABLE SECURITY & AUDIT LOGS ---
+    match /engine_logs/{logId} {
+      allow create: if request.auth != null; 
+      allow read: if isAdmin() || isSupervisor();
+      allow update, delete: if false; 
+    }
+
+    match /security_audit/{auditId} {
+      allow create: if request.auth != null;
+      allow read: if isAdmin(); // Strictly restricted
+      allow update, delete: if false; // TOTAL IMMUTABILITY
+    }
+
+    // --- 2. CONTROL ENGINE ENFORCEMENT ---
+    match /candidates/{id} {
+      allow read: if request.auth != null; // Scoping happens at query level or refined here
+      
+      allow update: if (
+        // Allow updating metadata if not in Audit
+        (resource.data.status == 'Draft' && request.resource.data.status == 'Draft') ||
+        
+        // Supervisor Audit Status Transitions
+        (isSupervisor() || isAdmin()) ||
+        
+        // Block direct status jumps by regular users
+        (request.resource.data.status == resource.data.status)
+      );
+    }
+
+    // --- 3. DATA SCOPING & RBAC ---
+    match /candidates/{id} {
+      allow read: if (
+        isAdmin() || 
+        isSupervisor() || 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Recruiter' && resource.data.ownerId == request.auth.uid) ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Client' && resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedClientId)
+      );
+      
+      allow update: if (
+        isAdmin() || isSupervisor() || 
+        (resource.data.status == 'Draft' && resource.data.ownerId == request.auth.uid)
+      );
+    }
+
+    match /leads/{leadId} {
+      allow read: if isAdmin() || isSupervisor() || resource.data.ownerId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+
+    // --- 4. TIMESHEET GOVERNANCE ---
+    match /timesheets/{tId} {
+      allow read: if resource.data.ownerId == request.auth.uid || 
+                    isAdmin() || isSupervisor();
+      
+      // Prevent editing once submitted for audit
+      allow update: if (resource.data.status == 'Draft' || isAdmin() || isSupervisor());
+    }
+
+    // Generic fallback
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
