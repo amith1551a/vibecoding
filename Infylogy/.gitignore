@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+functions/node_modules/
+functions/dist/
+functions/.env
+apps/infylogy-os/node_modules/
+apps/infylogy-os/dist/
