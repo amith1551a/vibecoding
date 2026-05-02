@@ -1,11 +1,28 @@
+import "dotenv/config";
 import http from "http";
 import { validateOnboarding } from "./src/agents/onboardingAgent";
+import { getCostSummary } from "./src/cost/costLogger";
 
-/**
- * Local test API server for Infylogy OS.
- * This lets us test the onboarding agent without frontend or Firebase first.
- */
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3002;
+
 const server = http.createServer(async (req, res) => {
+  if (req.method === "GET" && req.url === "/api/v1/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      status: "ok",
+      service: "infylogy-backend",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    }, null, 2));
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/v1/ai-cost") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(getCostSummary(), null, 2));
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/api/v1/onboarding") {
     let body = "";
 
@@ -20,7 +37,7 @@ const server = http.createServer(async (req, res) => {
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result, null, 2));
-      } catch (error) {
+      } catch {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Onboarding API failed" }));
       }
@@ -33,6 +50,6 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: "Route not found" }));
 });
 
-server.listen(3001, () => {
-  console.log("Infylogy local API running at http://localhost:3001");
+server.listen(PORT, () => {
+  console.log(`Infylogy local API running at http://localhost:${PORT}`);
 });
